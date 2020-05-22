@@ -37,7 +37,7 @@ library(suncalc)       # required for roost times function
 
 ### Load and prep data to annotate stopovers
 ```{r}
-load("https://github.com/jmallon/Stopover-Annotation/blob/master/example_data.robj")
+example_data <- read.csv("https://raw.githubusercontent.com/jmallon/Stopover-Annotation/master/example_data.csv", stringsAsFactors = F)
 
 # fix timestamp formats
 example_data$timestamp <- as.POSIXct(

@@ -371,7 +371,7 @@ summary {
 
 <p>Using migration annotated data, annotate stopovers using FPT or non-sedentary stopovers with a nearest neighbor approach. Then run code that removes start or end points that are clearly movements.</p>
 <p><em>Note:</em> These functions assume names are the same as Movebank data frames.</p>
-<pre class="r"><code>source(file.path(wd, &quot;stopover annotation tutorial functions.r&quot;))
+<pre class="r"><code>source(&quot;https://raw.githubusercontent.com/jmallon/Stopover-Annotation/master/stopover%20annotation%20tutorial%20functions.R&quot;)
 
 library(adehabitatLT)
 library(dplyr)
@@ -380,7 +380,7 @@ library(geosphere)     # distm function
 library(suncalc)       # required for roost times function</code></pre>
 <div id="load-and-prep-data-to-annotate-stopovers" class="section level3">
 <h3>Load and prep data to annotate stopovers</h3>
-<pre class="r"><code>load(file=file.path(wd,&quot;example_data.robj&quot;))
+<pre class="r"><code>example_data &lt;- read.csv(&quot;https://raw.githubusercontent.com/jmallon/Stopover-Annotation/master/example_data.csv&quot;, stringsAsFactors = F)
 
 # fix timestamp formats
 example_data$timestamp &lt;- as.POSIXct(
