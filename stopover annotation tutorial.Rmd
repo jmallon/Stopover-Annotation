@@ -6,114 +6,88 @@ output: html_document
 ---
 
 Using migration annotated data, annotate stopovers using FPT or non-sedentary stopovers with a nearest neighbor approach. Then run code that removes start or end points that are clearly movements.
+    
+*Note:* These functions assume names are the same as Movebank data frames.
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-rm(list=ls())
 
-wd <- "C:/Users/Julie/Box/R/Chapter 1"
-prjdta <- file.path(wd,"Data")
-prjscript <- file.path(wd,"Scripts")
-prjfuns <- file.path(wd,"Functions")
-prjresults <- file.path(wd,"Results")
-```
+wd <- getwd()
 
-```{r}
-source(file.path(prjfuns, "chapter 1 functions.r"))
-#source(file.path(prjfuns, "migration annotation funs.r"))
-source(file.path(prjfuns, "stopover annotation funs.r"))
+source(file.path(wd, "stopover annotation tutorial functions.r"))
 
-require(adehabitatLT)
-require(ggplot2)
-require(dplyr)
+library(adehabitatLT)
+library(dplyr)
 library(lubridate)
-library(data.table)
-library(geosphere)
+library(geosphere)     # distm function
+library(suncalc) 
+```
+
+```{r required functions and packages, eval = F}
+source(file.path(wd, "stopover annotation tutorial functions.r"))
+
+library(adehabitatLT)
+library(dplyr)
+library(lubridate)
+library(geosphere)     # distm function
+library(suncalc)       # required for roost times function
+```
+
+### Load and prep data to annotate stopovers
+```{r}
+load(file=file.path(wd,"example_data.robj"))
+
+# fix timestamp formats
+example_data$timestamp <- as.POSIXct(
+  strptime(
+    example_data$timestamp,
+    "%Y-%m-%d %H:%M:%S"),
+  usetz=F)
+example_data$study.local.timestamp <- as.POSIXct( 
+  strptime(
+    example_data$study.local.timestamp,  
+    "%Y-%m-%d %H:%M:%S"),
+  usetz=F)
 
 ```
 
-Prep Data to annotate stopovers
-```{r}
-birds_annotated <- read.csv(file.path(prjdta,"tuvu_mig_annotated.csv"), stringsAsFactors = F)
-birds_annotated[which(birds_annotated$individual.local.identifier ==  "Artful_Dodger" & 
-                        birds_annotated$date>"2018-09-12" & 
-                        birds_annotated$date<"2018-09-15"),]$mig.state <- "Non-mig"
-birds_annotated$ID_mig <- set.ID.pop(birds_annotated,
-                                     birds_annotated$mig.state)
-migration_data <- birds_annotated[which(birds_annotated$mig.state=="Mig"),]
-example_data <- migration_data[which(migration_data$ID_mig==4),]
-save(example_data,file=paste0(prjdta,"tuvu_migration_data.robj"))
-
-migration_data$timestamp <- as.POSIXct(
-  strptime(
-    migration_data$timestamp,
-    "%Y-%m-%d %H:%M:%S"),
-  usetz=F)
-migration_data$study.local.timestamp <- as.POSIXct( 
-  strptime(
-    migration_data$study.local.timestamp,  
-    "%Y-%m-%d %H:%M:%S"),
-  usetz=F)
-
-#remove sparse migrations
-bird <- split(migration_data,migration_data$individual.local.identifier)
-migdata2<- lapply(bird, function(x){
-  x<-x[order(x$study.local.timestamp),]
-  x<-data.table(x)
-  DT<-x[,.(duration=as.numeric(diff(range(study.local.timestamp))),
-          n=.N),by=ID_mig]
-  DT<-DT[,.(n/duration),by=ID_mig]  
-  migs.keep<-DT[V1>10,ID_mig]
-  x<-subset(x,ID_mig %in% migs.keep)
-})
-
-migdata3 <- rbindlist(migdata2)
-#mig_ids_rm <- c(481, 436, 428)
-#migdata3 <- migdata3[which(!(migdata3$ID_mig %in% mig_ids_rm))] 
-```
-
-
+### Stopover annotation function
 ```{r}
 
-
-
-migs <- split(migdata3,
-              migdata3$ID_mig)
-
-# fix one migration annotation
-
-
-mig_stops1 <- lapply(migs[1:20], function(x){
-  k = x$ID_mig[1]
-
-  #prevent issues due to gaps in track by interpolating missing points
-  mig_nogap <- interpolate_gappy_track(x$X,
+annotate_stops_fpt <- function(x){
+  # run for a single individual, single migration
+  # to run for multiple individuals or migrations, use lapply
+   
+  # prevent issues due to gaps in track by interpolating missing points
+  mig_nogap <- interpolate_gappy_track(x$X,           # must be in UTMs and not degrees!
                                        x$Y,
                                        as.POSIXct(
                                          x$study.local.timestamp))
   
-  df.traj <- as.ltraj(data.frame(mig_nogap$x,
+  df.traj <- as.ltraj(data.frame(mig_nogap$x,         # format data for adehabitat
                                mig_nogap$y),
                     as.POSIXct(mig_nogap$time), 
-                    id=k)
+                    id=x$individual.local.identifier[1])
   
-  #calculate fpt
-  df.fpt <- fpt_nogap(df.traj)
-  myfpt <- data.frame(time = mig_nogap$time, 
+  
+  df.fpt <- fpt(df.traj, r = 20000)                   # calculate FPT, check that r value works for your dataset
+  myfpt <- data.frame(time = mig_nogap$time,          # append FPT to a new data frame with time
                       fpt = df.fpt[[1]]$r1/60/60)
   
-  #find threshold
-  threshold <- find_threshold(myfpt, mig_nogap)
   
-  #pull out likely stopovers
-  stops <- subset(myfpt, fpt>threshold+1)
+  threshold <- find_threshold(myfpt, mig_nogap)       # find threshold to identify stopovers
+  
+  
+  stops <- subset(myfpt, fpt > threshold + 1)         # pull out likely stopovers
   
   mig_roost <- roost_times(x, mig_nogap)
   mig_nogap$hr <- lubridate::hour(mig_nogap$time)
-  mig_nogap$roost <- ifelse(mig_nogap$hr>mig_roost[2] & mig_nogap$hr < mig_roost[1], 0, 1)
+  mig_nogap$roost <- ifelse(mig_nogap$hr>mig_roost[2] & 
+                              mig_nogap$hr < mig_roost[1], 
+                            0, 1)
     
   
-  if(nrow(stops)>0){
+  if(nrow(stops)>0){                                 # if some stops have been identified
     mig_nogap$stopover <- ifelse(mig_nogap$time %in% stops$time,
                                1,0)
     mig_nogap$stop.id<- set.ID.ind(mig_nogap, mig_nogap$stopover)
@@ -125,9 +99,12 @@ mig_stops1 <- lapply(migs[1:20], function(x){
     x2 <- subset(x2,stopover==1)
     x2 <- x2  %>% 
       group_by(stop.id) %>%
-      mutate(p=dur/sum(dur))
+      mutate(p=dur/sum(dur))                         # proportion of stopover that is spent roosting
+                                                     # Up to the user to decide whether this helps with selection
     
-    y<-as.data.frame(subset(x2, roost==0 & p>.2 & dur>2))
+    y <- as.data.frame(
+      subset(x2,
+             roost==0 & p>.2 & dur>2))               # I find 0.2 works for this data (typical roost 6pm - 8am) 
     
     mig_nogap$stopover <- ifelse(mig_nogap$stop.id %in%
                                    as.numeric(y[,1]),
@@ -135,16 +112,14 @@ mig_stops1 <- lapply(migs[1:20], function(x){
     with(mig_nogap, 
          ScanTrack4(time, x,y,
                     col=as.factor(stopover),
-                    main=paste(k,"no gap"))) 
-    plot(myfpt,type="l")
+                    main="no gap"))                   # Scantrack plot to see where stopovers have been annotated
+    plot(myfpt, type="l")                             # FPT plot
     abline(h=threshold)
     
-  #mig2<-mig2[,c(1:22,26:28)]
 
   }else{
     mig_nogap$stopover <- 0
     mig_nogap$stop.id<- set.ID.ind(mig_nogap, mig_nogap$stopover)
-    #mig2 <- mig[,c(21,1:20,22:25)]
   }
   
   mig2 <- merge(x, 
@@ -156,149 +131,35 @@ mig_stops1 <- lapply(migs[1:20], function(x){
   
   #check that no stopovers were missed with a buffer check
   mig.sp <- mig2
-  coordinates(mig.sp) <- c("location.long","location.lat")
+  coordinates(mig.sp) <- c("location.long", "location.lat")
   dm<-data.frame(coordinates(mig.sp),
                  time=mig.sp$study.local.timestamp, 
                  X=rowSums(distm (coordinates(mig.sp)[,1:2], 
-                                fun = distHaversine) / 1000 <= 15)) # number of points within distance 10 km
-  mig2[which(dm$X>30),'stopover']<-1
+                                fun = distHaversine) / 1000 <= 15)) # number of points within distance 15 km
+  mig2[which(dm$X > 30),'stopover']<-1
   mig2<- mig2[-nrow(mig2),]
   mig2$stop.id<- set.ID.ind(mig2, mig2$stopover)
   with(mig2, ScanTrack(study.local.timestamp,
                        X,
                        Y,
                        col=as.factor(stopover),
-                       main=paste(k,"15 km buffer")))
+                       main="15 km buffer"))
 
   return(mig2)
   }
-)
-
-  
-# left off here
-
- stops_summary_table(mig_stops1[[3]]) 
-
- 
- #save(stop_fpt2,file=paste0(prjdta,"stopover_fpt2.robj"))
-#save(adedf,file=paste0(prjdta,"stopover_adehab_data.robj"))
-#save(vars.table,file=paste0(prjdta,"stopover_annot_variables.robj"))
-mig_stops1 <-   rbindlist(mig_stops1)
-mig_stops1$study.local.timestamp <- as.character(mig_stops1$study.local.timestamp)
-fwrite(mig_stops1, file.path(prjdta, "stop_ann1.csv"))
-
 ```
 
-#left off having just run this for all birds. Need to check robustness against previous method and then categorize the stops
 
+### Run annotation function
 ```{r}
-
-
-stops_mia <- c(477,453, 445, 385, 363 )
-
-nm_overlap_stop <- c(469, 361 )
-
-too_short <- c(462, )
-
-too_many <- c(457, 378, 368, 366, 359, 357, 354)
+example_annotated <- annotate_stops_fpt(example_data)      # the above function
 ```
 
-```{r, eval = F}
-# x<- mig_stops1[[2]] 
-# x$stop.start <- c(ifelse(diff(x$stop.id)== 1, 1, 0), 0) 
-# y <- c(1,which(x$stop.start==1))
-# x[y]
-# x %>% group_by(stop.id) %>% 
-#   summarize()
+### Optional summary table of stopovers
+```{r}
+stops_summary_table(example_annotated)                     # optional list and plots summarizing stopovers
 
-fix_mig.state <- function(x){
-  x$days.cont <- as.numeric(x$date - x$date[1])
-  x$ID_mig <- set.ID(x)
-  x2 <- x %>%
-    group_by(ID_mig, mig.state) %>%
-    summarize(dday = max(days.cont) - min(days.cont)) %>%
-    ungroup()
-  
-  x.table.sub <- which(x2$mig.state=="Mig")
-  min.dday <- which.min(x2[x.table.sub,]$dday)
-  max.ids <- round((length(which(table(x$year,
-                                       month(x$study.local.timestamp))
-                                 >0))+4)/3)
-  repeat{
-    if(x2[x.table.sub,]$dday[min.dday]<15){
-      fix.ms <- x2$mig.state[x.table.sub[min.dday]]
-      fix.ms <- ifelse(fix.ms == "Non-mig", "Mig", "Non-mig")
-      fix.id <- x2$ID_mig[x.table.sub[min.dday]]
-      x$mig.state[which(x$ID_mig == fix.id)] <- fix.ms
-      x$ID_mig <- set.ID(x)
-    }
-    x2 <- x %>%
-      group_by(ID_mig, mig.state) %>%
-      summarize(dday = max(days.cont) - min(days.cont)) %>%
-      ungroup()
-    x.table.sub <- which(x2$mig.state=="Mig")
-    min.dday <- which.min(x2[x.table.sub,]$dday)
-    if(max(x$ID_mig) <= max.ids & min(x2$dday>4)){
-      break
-    }
-  }
-  #ScanTrack(x$study.local.timestamp, 
-  #x$X, x$Y, col = as.factor(x$ID_mig))
-  #print(x$individual.local.identifier[1])
-  return(x)
-}   
 ```
 
-```{r, eval =F}
-load(paste0(prjdta,"stopover_fpt2.robj"))
-load(paste0(prjdta,"stopover_adehab_data.robj"))
-stop_fpt2<-as.data.frame(stop_fpt2)
-stop_fpt2<-stop_fpt2[order(stop_fpt2$ID_migration,stop_fpt2$local.time),]
-stop_fpt2$stop.id<- cumsum(ifelse(c(1,diff(stop_fpt2$stopover)),1,0))
-stop_fpt2$tag.local.identifier<-as.factor(stop_fpt2$tag.local.identifier)
-DF<-merge(stop_fpt2,adedf,by.x=c("local.time","X","Y","ID_migration"),by.y=c("date","x","y","id"),all=FALSE)
+End code.
 
-save(DF,file=paste0(prjdta,"stopover_annotations.robj"))
-```
-
-```{r check stopovers match earlier annotations, eval = F}
-load(file.path(wd,"2017/Data", "stopovers_with_all_weather.robj"))
-DF_old <- stops_full_weather 
-
-#df_old_inds <- split(DF_old, DF_old$individual.local.identifier)
-DF_old %>% 
-  group_by(individual.local.identifier, halfyr, stopover, day, stop.id) %>%
-  summarize(n.days = n()) %>%
-  group_by(individual.local.identifier, halfyr, stopover) %>%
-  summarize(n.stop = length(unique(stop.id)), n.days = n() ) %>%
-  filter(stopover==1) %>% View()
-
-new_out <- rbindlist(mig_stops1) %>% 
-  group_by(individual.local.identifier, halfyr, stopover, day, stop.id) %>%
-  summarize(n.days = n()) %>%
-  group_by(individual.local.identifier, halfyr, stopover) %>%
-  summarize(n.stop = length(unique(stop.id)), n.days = n() ) %>% 
-  filter(stopover==1)
-
-
-DF_old[which(DF_old$individual.local.identifier=="Desert_Rat"),] -> temp
-temp[which(temp$halfyr=="2015 B"),] -> temp
-with(temp,
-ScanTrack(study.local.timestamp,
-X,
-Y,
-col = as.factor(stop.id)))
-
-with(mig_stops1[[62]],
-ScanTrack(study.local.timestamp,
-X,
-Y,
-col = as.factor(stop.id)))
-```
-
-May need to return to the stopover annotation - go with results for now (april 14)
-
-
-Next,'stopover analyses june 2017.rmd'
-
-do analyses with and without definite feeding stops (high movement and long duration)

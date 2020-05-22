@@ -1,10 +1,6 @@
 #functions to use for chapter 1 vulture stopover analysis
 
 
-#x <- readRDS(paste0(src, "somefile.Rds"))
-source(file.path(prjfuns, "plot.fpt.r"))
-source(file.path(prjfuns, "multiplot.r"))
-
 #source(chartr("/","\\", "/Users/Julie/Documents/R/functions/multiplot.r"))
 #source("/Users/Julie/R/functions/multiplot.r")
 
@@ -466,3 +462,7 @@ multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL) {
     }
   }
 }
+
+#x <- readRDS(paste0(src, "somefile.Rds"))
+#source(file.path(prjfuns, "plot.fpt.r"))
+#source(file.path(prjfuns, "multiplot.r"))
