@@ -49,7 +49,7 @@ interpolate_gappy_track <- function(x,y,time) {
 }
 
 # marcher package's scantrack function
-ScanTrack <- function(time,x,y=NULL, col=NULL, cex=NULL, ...)
+ScanTrack <- function(time,x,y=NULL, col=NULL, cex=NULL, alpha = 0.7...)
 {
   if(is.null(y)) if(is.complex(x)){y <- Im(x); x <- Re(x)} else if(ncol(x) == 2){y <- x[,2]; x <- x[,1]}
   
@@ -57,9 +57,9 @@ ScanTrack <- function(time,x,y=NULL, col=NULL, cex=NULL, ...)
   if(is.null(cex)) cex = 0.5
   
   layout(rbind(c(1,2), c(1,3)))
-  plot(x,y,asp=1, type="o", pch=19, col=col, cex=cex, ...)
-  plot(time,x, type="o", pch=19, col=col, xaxt="n", xlab="", cex=cex, ...)
-  plot(time,y, type="o", pch=19, col=col, cex=cex, ...)
+  plot(x,y,asp=1, type="o", pch=19, col=col, cex=cex, alpha =alpha, ...)
+  plot(time,x, type="o", pch=19, col=col, xaxt="n", xlab="", cex=cex, alpha =alpha...)
+  plot(time,y, type="o", pch=19, col=col, cex=cex, alpha=alpha...)
 }
 
 # adds a 4th panel of FPT to marcher's ScanTrack function
